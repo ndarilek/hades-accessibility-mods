@@ -8,6 +8,7 @@ using fn_Tolk_Output            = bool(*)(const wchar_t*, bool);
 using fn_Tolk_Silence           = void(*)();
 using fn_Tolk_IsLoaded          = bool(*)();
 using fn_Tolk_HasSpeech         = bool(*)();
+using fn_Tolk_TrySAPI           = void(*)(bool);
 using fn_Tolk_DetectScreenReader = const wchar_t*(*)();
 
 static HMODULE s_tolkModule = nullptr;
@@ -18,6 +19,7 @@ static fn_Tolk_Output            s_Output            = nullptr;
 static fn_Tolk_Silence           s_Silence           = nullptr;
 static fn_Tolk_IsLoaded          s_IsLoaded          = nullptr;
 static fn_Tolk_HasSpeech         s_HasSpeech         = nullptr;
+static fn_Tolk_TrySAPI           s_TrySAPI           = nullptr;
 static fn_Tolk_DetectScreenReader s_DetectScreenReader = nullptr;
 
 static bool s_available = false;
@@ -43,6 +45,7 @@ bool Init(const wchar_t* tolkDllPath)
     s_Silence           = reinterpret_cast<fn_Tolk_Silence>(GetProcAddress(s_tolkModule, "Tolk_Silence"));
     s_IsLoaded          = reinterpret_cast<fn_Tolk_IsLoaded>(GetProcAddress(s_tolkModule, "Tolk_IsLoaded"));
     s_HasSpeech         = reinterpret_cast<fn_Tolk_HasSpeech>(GetProcAddress(s_tolkModule, "Tolk_HasSpeech"));
+    s_TrySAPI           = reinterpret_cast<fn_Tolk_TrySAPI>(GetProcAddress(s_tolkModule, "Tolk_TrySAPI"));
     s_DetectScreenReader = reinterpret_cast<fn_Tolk_DetectScreenReader>(GetProcAddress(s_tolkModule, "Tolk_DetectScreenReader"));
 
     if (!s_Load || !s_Unload || !s_Output || !s_Silence) {
@@ -74,6 +77,11 @@ bool IsAvailable() { return s_available; }
 void Load()
 {
     if (s_Load) {
+        // Allow SAPI as a last-resort output so speech works where no
+        // screen reader is running (e.g. Proton's built-in voices)
+        if (s_TrySAPI) {
+            s_TrySAPI(true);
+        }
         s_Load();
         Log::Info("Tolk_Load called");
 
