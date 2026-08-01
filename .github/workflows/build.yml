@@ -1,5 +1,15 @@
 name: Build
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag to publish the release under
+        required: true
+        default: v36-sapi.1
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -13,3 +23,28 @@ jobs:
         run: python scripts/generate_embedded_mods.py
       - name: Build DLL
         run: msbuild src/cpp/hades.vcxproj /p:Configuration=Release /p:Platform=x64
+      # The release zip also carries Tolk.dll, nvdaControllerClient64.dll,
+      # languages/ and subtitles/, which this repo doesn't build. Splice the
+      # freshly built xinput1_4.dll into the upstream v36 zip instead.
+      - name: Package release zip
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Recurse -Filter xinput1_4.dll |
+            Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
+          if (-not $dll) { throw 'built xinput1_4.dll not found' }
+          curl.exe -sSL -o upstream.zip https://github.com/MichaelJohann1/hades-accessibility-mods/releases/download/v36/HadesAccessibilityModsV36.zip
+          $sha = (Get-FileHash upstream.zip -Algorithm SHA256).Hash.ToLower()
+          if ($sha -ne '5ab5583c2c3b2f87a03d05e38f37d7e6b73d6d2baf51e57843fd05fefd0d0c97') {
+            throw "upstream zip hash mismatch: $sha"
+          }
+          Expand-Archive upstream.zip -DestinationPath pkg
+          Copy-Item $dll.FullName pkg\HadesAccessibilityModsV36\xinput1_4.dll -Force
+          Set-Location pkg
+          7z a ..\HadesAccessibilityModsV36.zip HadesAccessibilityModsV36
+      - name: Publish release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: HadesAccessibilityModsV36.zip
